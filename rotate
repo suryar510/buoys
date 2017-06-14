@@ -1,0 +1,15 @@
+#!/bin/bash
+
+#while :
+#do 
+	for file in basic/*.png; do
+		if [[ $file == *p.jpg ]] 	
+		then
+			echo "p.jpg"
+		else
+			./buoy $file 
+		fi
+
+		read -t 1 -n 1 key
+	done
+#done
