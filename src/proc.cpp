@@ -1,5 +1,9 @@
 #include "proc.hpp"
 
+/*
+ * Basic Color Filters
+ */
+
 cv::Mat yellowFilter(const cv::Mat& in){
 	//Yellow
 	cv::Mat lab,lab_split[3];
@@ -7,6 +11,50 @@ cv::Mat yellowFilter(const cv::Mat& in){
 	cv::split(lab, lab_split);
 	return lab_split[2];
 }
+cv::Mat greenFilter(const cv::Mat& in){
+	//Yellow
+	cv::Mat lab,lab_split[3];
+	cv::cvtColor(in,lab, cv::COLOR_BGR2HSV);
+	cv::split(lab, lab_split);
+	return lab_split[1];
+}
+
+cv::Mat redFilter(const cv::Mat& in){
+	//Red
+	cv::Mat ycrcb,ycrcb_split[3];
+	cv::cvtColor(in,ycrcb, cv::COLOR_BGR2YCrCb);
+	cv::split(ycrcb, ycrcb_split);
+	return ycrcb_split[1];
+}
+
+/*
+ * Mat Erosion
+ */
+
+cv::Mat erodeMat(const cv::Mat& src){
+
+	cv::Mat dilation_dst;
+
+	int dilation_elem = 1;
+	int dilation_size = 0;
+	int dilation_type;
+
+  	if( dilation_elem == 0 ){ dilation_type = cv::MORPH_RECT; }
+  	else if( dilation_elem == 1 ){ dilation_type = cv::MORPH_CROSS; }
+  	else if( dilation_elem == 2) { dilation_type = cv::MORPH_ELLIPSE; }
+
+	cv::Mat element = getStructuringElement( dilation_type,
+                                       cv::Size( 2*dilation_size + 1, 2*dilation_size+1 ),
+                                       cv::Point( dilation_size, dilation_size ) );
+  	// Apply the dilation operation
+  	erode( src, dilation_dst, element );
+	return dilation_dst;
+}
+
+/*
+ * Illumination Correction
+ */
+
 cv::Mat illumination_correction(cv::Mat const &correction_src, float blur_kernel_size)
 {
 	cv::Mat blurred_img, diff_img, corrected_img;
@@ -14,7 +62,6 @@ cv::Mat illumination_correction(cv::Mat const &correction_src, float blur_kernel
 	cv::GaussianBlur(correction_src, blurred_img, cv::Size(blur_kernel_size, blur_kernel_size), 0, 0); 
 	diff_img = correction_src - blurred_img;
 	mean_val = mean(blurred_img);
-	std::cout <<"mean_val: " << mean_val << "\n";
 	corrected_img = diff_img + cv::sum(mean_val)[0];
 	return corrected_img;
 }
@@ -43,72 +90,11 @@ cv::Mat color_illumination_correction(cv::Mat const &correction_src, float blur_
             
         return corrected_img;
 }           
-cv::Point brightestRed(const cv::Mat& in, const cv::Mat& color, int thresh){
-	int x, y, brightest;
-	for(int i=0; i<in.rows; i++){
-    	for(int j=0; j<in.cols; j++){
-			int f = in.at<uchar>(i,j);
-			if(f>brightest){
-				x = j;
-				y = i;
-				brightest = f;
-			}
-		}
-	}
-	int r = color.at<cv::Vec3b>(y,x)[2];
-	if(r<thresh){
-		std::vector<cv::Point> bad = {cv::Point(x,y)};
-		return brightestRedSmall(in, color, thresh, bad); 
-	}
-	return cv::Point(x,y);
-}
-cv::Point brightestRedSmall(const cv::Mat& in, const cv::Mat& color, int thresh, std::vector<cv::Point>& exc){
-	int x, y, brightest;
-	for(int i=0; i<in.rows; i++){
-    	for(int j=0; j<in.cols; j++){
-			int f = in.at<uchar>(i,j);
-			if(f>brightest && possible(cv::Point(j,i), exc)){
-				x = j;
-				y = i;
-				brightest = f;
-			}
-		}
-	}
-	int r = color.at<cv::Vec3b>(y,x)[2];
-	if(r<thresh){
-		exc.push_back(cv::Point(y,x));
-		return brightestRedSmall(in, color, thresh, exc); 
-	}
-	return cv::Point(x,y);
-}
-bool possible(cv::Point p, const std::vector<cv::Point> & exc){
-	for(auto a : exc){
-		if(p.x == a.x && p.y == a.y)
-			return true;
-	}
-	return false;
-}
-cv::Mat greenFilter(const cv::Mat& in){
-	//Yellow
-	cv::Mat lab,lab_split[3];
-	cv::cvtColor(in,lab, cv::COLOR_BGR2HSV);
-	cv::split(lab, lab_split);
-	return lab_split[1];
-}
 
-cv::Mat redFilter(const cv::Mat& in){
-	//Red
-	cv::Mat ycrcb,ycrcb_split[3];
-	cv::cvtColor(in,ycrcb, cv::COLOR_BGR2YCrCb);
-	cv::split(ycrcb, ycrcb_split);
-	return ycrcb_split[1];
-}
-template <typename T>
-void print(std::vector<T> const& in){
-	for(auto val : in)
-		std::cout<< val << " ";
-	std::cout<<'\n';
-}
+/*
+ *	White Balancing
+ */
+
 template <typename T>
 inline T trunc(T val, T min, T max)
 {
@@ -121,22 +107,6 @@ inline T trunc(T val, T min, T max)
 		return max;
 	}
 	return min;
-}
-
-cv::Mat removeOverlap(const cv::Mat& first, const cv::Mat& second, int thresh){
-	cv::Mat out(first.rows, first.cols, CV_64F, 0.0);
-    std::cout << first.cols << " " << first.rows << std::endl;
-	for(int i=0; i<first.rows; i++){
-    	for(int j=0; j<first.cols; j++){
-			int f = first.at<uchar>(i,j);
-			int s = second.at<uchar>(i,j);
-        	std::cout << j << " " << i << std::endl;
-			if((f > thresh) != (s > thresh)){
-				out.at<uchar>(i,j) = std::max(s,f);
-			}
-		}
-	}
-	return out;
 }
 
 void whitebalance(const cv::Mat& src, cv::Mat& dst,

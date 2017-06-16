@@ -1,45 +1,42 @@
-#include "iostream"
-#include <stdio.h>
-#include <string>
-#include <fstream>
-#include <string>
+#include "buoy.hpp"
 
-#include "proc.hpp"
-
-using namespace std;
-using namespace cv;
-Mat kmeans(Mat);
-Mat kmeansGray(Mat);
-cv::Point brightest(const cv::Mat&);
-void print(std::string s, int x, int y){
-	std::cout<<s<<" "<<x<<" "<<y<<std::endl;
-}
 cv::Mat redBuoy(const cv::Mat& in){
-	/*
-	 * At Competition Pool Uncomment these lines
-	 */
-		//Mat src = color_illumination_correction(in, 171);
-		//Mat alg3 = redFilter(src);
-	/*
-	 * At AVHS Pool Uncomment these lines
-	 */
-		Mat alg3 = redFilter(in);
-
-	normalize(alg3,alg3, 0, 255, NORM_MINMAX, CV_8UC1);
-	return alg3;
+	cv::Mat src;
+	in.copyTo(src);
+	//true when at Competition Pool
+	//false when at AVHS Pool
+	if(true)
+		src = color_illumination_correction(in, 171);
+	cv::Mat red = redFilter(src);
+	cv::normalize(red,red, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+	red = erodeMat(red);
+	cv::fastNlMeansDenoising(red, red, 3, 7, 21 );
+	return red;
+}
+cv::Mat greenBuoy(const cv::Mat& in){
+	//Doesn't work very well
+	cv::Mat base = redBuoy(in);
+	cv::Mat green;
+	cv::bitwise_not(base,green);
+	cv::normalize(green,green, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+	return green;
 }
 cv::Mat yellowBuoy(const cv::Mat& in){
-	Mat alg1 = yellowFilter(in);
-	normalize(alg1,alg1, 0, 255, NORM_MINMAX, CV_8UC1);
-	alg1 = illumination_correction(alg1, 101);
-	return alg1;
+	cv::Mat yellow = yellowFilter(in);
+	cv::normalize(yellow, yellow, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+	yellow = illumination_correction(yellow, 101);
+	return yellow;
 }
 cv::Point brightest(const cv::Mat& in){
+	/*
+	 * TODO needs to be improved
+	 * Currently finds only brightest pixel instead of brightest blob
+	 */
 	double minVal; 
 	double maxVal; 
-	Point minLoc; 
-	Point maxLoc;
-	minMaxLoc( in, &minVal, &maxVal, &minLoc, &maxLoc );
+	cv::Point minLoc; 
+	cv::Point maxLoc;
+	cv::minMaxLoc( in, &minVal, &maxVal, &minLoc, &maxLoc );
 	return maxLoc;
 }
 int main( int argc, char** argv )
@@ -48,99 +45,62 @@ int main( int argc, char** argv )
 		std::cout<<"format: "<<argv[0]<<" [img file]"<<std::endl;
 		return 0;
 	} 
-	string file = argv[1];
-	Mat src = imread(file, 1);
+	std::string file = argv[1];
+	cv::Mat src = cv::imread(file, 1);
 
+	// Apply Filters to the Image
+	cv::Mat red = redBuoy(src);
+	cv::Mat yellow = yellowBuoy(src);
+	cv::Mat green = greenBuoy(src);
+//	imshow("green", green);
+//	imshow("red", red);
+//	imshow("yellow", yellow);
 
-	Mat red = redBuoy(src);
-	Mat yellow = yellowBuoy(src);
+	//Find the brightest point from each Mat
 	cv::Point redP = brightest(red);
 	cv::Point yellowP = brightest(yellow);
+	cv::Point greenP = brightest(green);
 
-	circle(src, redP, 25, Scalar(0,0,255), 1, 0);
-	circle(src, yellowP, 25, Scalar(0,255,255), 1, 0);
+	//check validity of each point and draw it on Mat if true
+	if(checkRed(redP, src, 175))
+		cv::circle(src, redP, 25, cv::Scalar(0,0,255), 1, 0);
+	if(checkYellow(yellowP, src, 100))
+		cv::circle(src, yellowP, 25, cv::Scalar(0,255,255), 1, 0);
+	if(checkGreen(greenP, src, 75))
+		cv::circle(src, greenP, 25, cv::Scalar(0,255,0), 1, 0);
 
-	resize(src, src, Size(), 2, 2, INTER_CUBIC);
-	imshow("red", red);
-	imshow("yellow", yellow);
-	imshow("src", src);
+	cv::resize(src, src, cv::Size(), 2, 2, cv::INTER_CUBIC);
+	cv::imshow("src", src);
 
-	waitKey(0);
+	cv::waitKey(0);
 	return(0);
 }
-Mat kmeansGray(Mat in){
-	Mat src;
-	in.copyTo(src);
-    blur(src, src, Size(10,10));
-
-    Mat p = Mat::zeros(src.cols*src.rows, 3, CV_32F);
-    Mat bestLabels, centers, clustered;
-    Mat gray = src;
-    // i think there is a better way to split pixel bgr color
-    for(int i=0; i<src.cols*src.rows; i++) {
-        p.at<float>(i,0) = (i/src.cols) / src.rows;
-        p.at<float>(i,1) = (i%src.cols) / src.cols;
-        p.at<float>(i,2) = gray.data[i] / 255.0;
-    }
-
-    int K = 8;
-    cv::kmeans(p, K, bestLabels,
-            TermCriteria( CV_TERMCRIT_EPS+CV_TERMCRIT_ITER, 10, 1.0),
-            3, KMEANS_PP_CENTERS, centers);
-
-    int colors[K];
-    for(int i=0; i<K; i++) {
-        colors[i] = 255/(i+1);
-    }
-    // i think there is a better way to do this mayebe some Mat::reshape?
-    clustered = Mat(src.rows, src.cols, CV_32F);
-    for(int i=0; i<src.cols*src.rows; i++) {
-        clustered.at<float>(i/src.cols, i%src.cols) = (float)(colors[bestLabels.at<int>(0,i)]);
-//      cout << bestLabels.at<int>(0,i) << " " <<
-//              colors[bestLabels.at<int>(0,i)] << " " <<
-//              clustered.at<float>(i/src.cols, i%src.cols) << " " <<
-//              endl;
-    }
-
-//    clustered.convertTo(clustered, CV_8U);
-	return clustered;
+/*
+ * These test the validity of the buoy
+ * If false, currently we have no backup
+ */
+bool checkYellow(cv::Point p, const cv::Mat& in, int thresh){
+	int red = in.at<cv::Vec3b>(p.y, p.x)[2];
+	int green = in.at<cv::Vec3b>(p.y, p.x)[1];
+	int blue = in.at<cv::Vec3b>(p.y, p.x)[0];
+	std::cout<<blue<<" "<<green<<" "<<red<<'\n';
+	if((abs(red-green))<thresh)
+		return true;
+	return false;
 }
-Mat kmeans(Mat in){
-	Mat src = in;
-    blur(src, src, Size(10,10));
-
-    Mat p = Mat::zeros(src.cols*src.rows, 5, CV_32F);
-    Mat bestLabels, centers, clustered;
-    vector<Mat> bgr;
-    cv::split(src, bgr);
-    // i think there is a better way to split pixel bgr color
-    for(int i=0; i<src.cols*src.rows; i++) {
-        p.at<float>(i,0) = (i/src.cols) / src.rows;
-        p.at<float>(i,1) = (i%src.cols) / src.cols;
-        p.at<float>(i,2) = bgr[0].data[i] / 255.0;
-        p.at<float>(i,3) = bgr[1].data[i] / 255.0;
-        p.at<float>(i,4) = bgr[2].data[i] / 255.0;
-    }
-
-    int K = 8;
-    cv::kmeans(p, K, bestLabels,
-            TermCriteria( CV_TERMCRIT_EPS+CV_TERMCRIT_ITER, 10, 1.0),
-            3, KMEANS_PP_CENTERS, centers);
-
-    int colors[K];
-    for(int i=0; i<K; i++) {
-        colors[i] = 255/(i+1);
-    }
-    // i think there is a better way to do this mayebe some Mat::reshape?
-    clustered = Mat(src.rows, src.cols, CV_32F);
-    for(int i=0; i<src.cols*src.rows; i++) {
-        clustered.at<float>(i/src.cols, i%src.cols) = (float)(colors[bestLabels.at<int>(0,i)]);
-//      cout << bestLabels.at<int>(0,i) << " " <<
-//              colors[bestLabels.at<int>(0,i)] << " " <<
-//              clustered.at<float>(i/src.cols, i%src.cols) << " " <<
-//              endl;
-    }
-
-//    clustered.convertTo(clustered, CV_8U);
-	return clustered;
+bool checkGreen(cv::Point p, const cv::Mat& in, int thresh){
+	int red = in.at<cv::Vec3b>(p.y, p.x)[2];
+	int green = in.at<cv::Vec3b>(p.y, p.x)[1];
+	int blue = in.at<cv::Vec3b>(p.y, p.x)[0];
+	if((abs(green-blue)>thresh) )
+		return true;
+	return true;
+}
+bool checkRed(cv::Point p, const cv::Mat& in, int thresh){
+	int red = in.at<cv::Vec3b>(p.y, p.x)[2];
+	int green = in.at<cv::Vec3b>(p.y, p.x)[1];
+	int blue = in.at<cv::Vec3b>(p.y, p.x)[0];
+	if(red>thresh && (abs(red-green)>50) && (abs(red-blue)>50) )
+		return true;
+	return true;
 }
