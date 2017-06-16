@@ -2,7 +2,7 @@
 
 #while :
 #do 
-	for file in basic/*.png; do
+	for file in good/*.png; do
 		if [[ $file == *p.jpg ]] 	
 		then
 			echo "p.jpg"
